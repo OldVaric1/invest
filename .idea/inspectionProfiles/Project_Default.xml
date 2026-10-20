@@ -1,0 +1,74 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="HtmlUnknownTag" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="myValues">
+        <value>
+          <list size="7">
+            <item index="0" class="java.lang.String" itemvalue="nobr" />
+            <item index="1" class="java.lang.String" itemvalue="noembed" />
+            <item index="2" class="java.lang.String" itemvalue="comment" />
+            <item index="3" class="java.lang.String" itemvalue="noscript" />
+            <item index="4" class="java.lang.String" itemvalue="embed" />
+            <item index="5" class="java.lang.String" itemvalue="script" />
+            <item index="6" class="java.lang.String" itemvalue="select" />
+          </list>
+        </value>
+      </option>
+      <option name="myCustomValuesEnabled" value="true" />
+    </inspection_tool>
+    <inspection_tool class="LanguageDetectionInspection" enabled="true" level="INFORMATION" enabled_by_default="true" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="INFORMATION" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="alembic" />
+          <option value="bcrypt" />
+          <option value="blinker" />
+          <option value="click" />
+          <option value="colorama" />
+          <option value="DateTime" />
+          <option value="Flask" />
+          <option value="Flask-Bcrypt" />
+          <option value="Flask-Login" />
+          <option value="Flask-Migrate" />
+          <option value="Flask-SQLAlchemy" />
+          <option value="Flask-WTF" />
+          <option value="greenlet" />
+          <option value="itsdangerous" />
+          <option value="Jinja2" />
+          <option value="Mako" />
+          <option value="MarkupSafe" />
+          <option value="pillow" />
+          <option value="psycopg2" />
+          <option value="python-dotenv" />
+          <option value="pytz" />
+          <option value="SQLAlchemy" />
+          <option value="typing_extensions" />
+          <option value="Werkzeug" />
+          <option value="WTForms" />
+          <option value="zope.interface" />
+          <option value="selenium" />
+          <option value="webdriver-manager" />
+          <option value="appdirs" />
+          <option value="atomicwrites" />
+          <option value="fqdn" />
+          <option value="isoduration" />
+          <option value="jsonpointer" />
+          <option value="jupyter-highlight-selected-word" />
+          <option value="lxml" />
+          <option value="matplotlib" />
+          <option value="mkl-service" />
+          <option value="protobuf" />
+          <option value="pyasn1-modules" />
+          <option value="pyls-spyder" />
+          <option value="pywin32" />
+          <option value="redis" />
+          <option value="setuptools" />
+          <option value="uri-template" />
+          <option value="webcolors" />
+          <option value="wheel" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
