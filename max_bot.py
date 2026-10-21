@@ -1,5 +1,5 @@
 """
-max_bot.py — Бот для MAX с автоматическими утренними рассылками
+max_bot.py — Финальная рабочая версия (без клавиатур, только текстовые команды)
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from model import StockModel, get_verdict, format_stock_info
 # ============================================================================
 # КОНФИГУРАЦИЯ
 # ============================================================================
-BOT_TOKEN = "f9LHodD0cOIE5o69a8MiMPDsXV_19u1hw66Zxpb7W5R081-N9m-7i-M1JKsXS7jdpFWYOWxnkGzE9x7by596"  # <-- ЗАМЕНИТЕ НА ВАШ ТОКЕН
+BOT_TOKEN = "f9LHodD0cOIE5o69a8MiMPDsXV_19u1hw66Zxpb7W5R081-N9m-7i-M1JKsXS7jdpFWYOWxnkGzE9x7by596"  # <-- ЗАМЕНИТЕ
 SUBSCRIBERS_FILE = "subscribers.json"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,123 +29,50 @@ model = StockModel()
 model.load_data()
 model.add_features()
 model.train()
-logger.info("✅ Модель готова к работе")
-
+logger.info(f"✅ Модель готова. Анализируем {len(model.tickers)} акций")
 
 # ============================================================================
-# УПРАВЛЕНИЕ ПОДПИСЧИКАМИ
+# ПОДПИСЧИКИ
 # ============================================================================
 def load_subscribers():
-    """Загрузка подписчиков из файла"""
     if os.path.exists(SUBSCRIBERS_FILE):
         with open(SUBSCRIBERS_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            # Поддержка старого формата (просто список user_id)
-            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], str):
-                return {uid: uid for uid in data}  # Конвертируем в новый формат
+            if isinstance(data, list):
+                return {uid: uid for uid in data}
             return data
     return {}
 
-
-def save_subscribers(subscribers):
-    """Сохранение подписчиков в файл"""
+def save_subscribers(subs):
     with open(SUBSCRIBERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(subscribers, f, ensure_ascii=False, indent=2)
+        json.dump(subs, f, ensure_ascii=False, indent=2)
 
-
-# subscribers теперь словарь: {user_id: chat_id}
 subscribers = load_subscribers()
 
+# ============================================================================
+# ИЗВЛЕЧЕНИЕ ID
+# ============================================================================
+def extract_user_id(event):
+    try:
+        ids = event.get_ids()
+        if isinstance(ids, tuple) and len(ids) >= 2:
+            return str(ids[1])
+    except Exception:
+        pass
+    return ''
 
 def extract_chat_id(event):
-    """Извлечение chat_id из события"""
-    # Способ 1: get_ids() возвращает кортеж (chat_id, user_id)
-    if hasattr(event, 'get_ids'):
-        try:
-            ids = event.get_ids()
-            if isinstance(ids, tuple) and len(ids) >= 1:
-                return str(ids[0])
-        except Exception:
-            pass
-
-    # Способ 2: event.message.recipient.chat_id
-    if hasattr(event, 'message') and hasattr(event.message, 'recipient'):
-        chat_id = getattr(event.message.recipient, 'chat_id', None)
-        if chat_id:
-            return str(chat_id)
-
+    try:
+        ids = event.get_ids()
+        if isinstance(ids, tuple) and len(ids) >= 1:
+            return str(ids[0])
+    except Exception:
+        pass
     return ''
 
-
-def extract_user_id(event):
-    """Извлечение user_id из события"""
-    if hasattr(event, 'get_ids'):
-        try:
-            ids = event.get_ids()
-            if isinstance(ids, tuple) and len(ids) >= 2:
-                return str(ids[1])
-        except Exception:
-            pass
-
-    if hasattr(event, 'message') and hasattr(event.message, 'sender'):
-        user_id = getattr(event.message.sender, 'user_id', None)
-        if user_id:
-            return str(user_id)
-
-    return ''
-
-
 # ============================================================================
-# ФОНОВАЯ ЗАДАЧА: УТРЕННЯЯ РАССЫЛКА
+# ФУНКЦИИ ОТВЕТОВ
 # ============================================================================
-async def morning_report_job():
-    """Ежедневная рассылка в 10:00"""
-    logger.info("🌅 Запуск утренней рассылки...")
-    if not subscribers:
-        logger.info("Нет подписчиков, рассылка пропущена.")
-        return
-
-    top_stocks = model.predict(n=5)
-    response = "🌅 *Утренний обзор рынка от ИИ-Трейдера*\n\n"
-    response += f" Дата: {datetime.now().strftime('%d.%m.%Y')}\n\n"
-    for idx, (_, row) in enumerate(top_stocks.iterrows(), 1):
-        response += f"{idx}. {format_stock_info(row)}\n\n"
-    response += "⚠️ _Это не инвестиционная рекомендация._"
-
-    successful_sends = 0
-    for user_id, chat_id in subscribers.items():
-        try:
-            # Используем chat_id для отправки (MAX API требует chat_id)
-            await bot.send_message(chat_id=int(chat_id), text=response)
-            successful_sends += 1
-            logger.info(f"✅ Отправлено пользователю {user_id} (chat_id: {chat_id})")
-        except Exception as e:
-            logger.error(f"❌ Ошибка отправки пользователю {user_id}: {e}")
-
-    logger.info(f"✅ Утренняя рассылка завершена. Доставлено: {successful_sends}/{len(subscribers)}")
-
-# ============================================================================
-# ИНИЦИАЛИЗАЦИЯ БОТА И ПЛАНИРОВЩИКА
-# ============================================================================
-bot = Bot(BOT_TOKEN)
-dp = Dispatcher()
-scheduler = AsyncIOScheduler()
-
-def extract_user_id(event):
-    """Извлечение user_id"""
-    if hasattr(event, 'get_ids'):
-        try:
-            ids = event.get_ids()
-            if isinstance(ids, tuple) and len(ids) >= 2:
-                return str(ids[1])
-        except Exception:
-            pass
-    if hasattr(event, 'message') and hasattr(event.message, 'sender'):
-        user_id = getattr(event.message.sender, 'user_id', None)
-        if user_id:
-            return str(user_id)
-    return ''
-
 def get_help_text():
     return (
         "👋 Привет! Я ИИ-Трейдер — помощник для анализа акций Московской биржи.\n\n"
@@ -154,60 +81,90 @@ def get_help_text():
         "• /top10 — Топ-10 акций\n"
         "• /ticker SBER — Анализ конкретной акции\n"
         "• /subscribe — Подписаться на утреннюю рассылку (10:00 МСК)\n"
-        "• /unsubscribe — Отписаться от рассылки\n"
+        "• /unsubscribe — Отписаться\n"
         "• /help — Эта справка\n\n"
-        "💡 Быстрый анализ: просто напишите тикер (например, SBER, GAZP)"
+        "💡 Быстрый анализ: просто напишите тикер (например, SBER, GAZP, LKOH)"
+        "ссылка на песочницу "
     )
 
-async def send_top_stocks(event, n=5):
-    await event.message.answer("⏳ Анализирую рынок...")
+async def send_top_stocks(msg, n=5):
+    await msg.answer("⏳ Анализирую рынок...")
     top_stocks = model.predict(n=n)
     response = f"🎯 *Топ-{n} акций на сегодня:*\n\n"
     for idx, (_, row) in enumerate(top_stocks.iterrows(), 1):
         response += f"{idx}. {format_stock_info(row)}\n\n"
     response += "⚠️ _Это не инвестиционная рекомендация._"
-    await event.message.answer(response)
+    await msg.answer(response)
 
-async def send_ticker_analysis(event, ticker_code):
+async def send_ticker_analysis(msg, ticker_code):
     stock_data = model.get_ticker_info(ticker_code)
     if stock_data is not None:
         response = f"📊 *Анализ {ticker_code}:*\n\n{format_stock_info(stock_data)}"
-        await event.message.answer(response)
+        await msg.answer(response)
     else:
-        await event.message.answer(f"❌ Данные по {ticker_code} не найдены.")
-
-
+        await msg.answer(f"❌ Данные по {ticker_code} не найдены.")
 
 # ============================================================================
-# ОБРАБОТЧИКИ СООБЩЕНИЙ
+# УТРЕННЯЯ РАССЫЛКА
 # ============================================================================
+async def morning_report_job():
+    logger.info("🌅 Запуск утренней рассылки...")
+    if not subscribers:
+        logger.info("Нет подписчиков.")
+        return
+
+    top_stocks = model.predict(n=5)
+    response = "🌅 *Утренний обзор рынка*\n\n"
+    response += f"📅 {datetime.now().strftime('%d.%m.%Y')}\n\n"
+    for idx, (_, row) in enumerate(top_stocks.iterrows(), 1):
+        response += f"{idx}. {format_stock_info(row)}\n\n"
+    response += "⚠️ _Не инвестиционная рекомендация._"
+
+    sent = 0
+    for user_id, chat_id in subscribers.items():
+        try:
+            # Для рассылки используем встроенный метод бота
+            await bot.send_message(chat_id=int(chat_id), text=response)
+            sent += 1
+        except Exception as e:
+            logger.error(f"❌ Ошибка отправки {user_id}: {e}")
+
+    logger.info(f"✅ Рассылка завершена: {sent}/{len(subscribers)}")
+
+# ============================================================================
+# ОБРАБОТЧИКИ
+# ============================================================================
+bot = Bot(BOT_TOKEN)
+dp = Dispatcher()
+scheduler = AsyncIOScheduler()
 
 @dp.bot_started()
 async def handle_bot_started(event: BotStarted):
     user_id = extract_user_id(event)
-    if not user_id:
-        logger.error("❌ Не удалось получить user_id в bot_started")
-        return
-    logger.info(f"🟢 Пользователь {user_id} запустил бота")
-    await event.message.answer(get_help_text())
+    chat_id = extract_chat_id(event)
 
+    if not user_id:
+        logger.error("❌ Не удалось получить user_id")
+        return
+
+    logger.info(f"🟢 Пользователь {user_id} запустил бота")
+
+    if user_id and chat_id:
+        subscribers[user_id] = chat_id
+        save_subscribers(subscribers)
+
+    # ✅ РАБОЧИЙ МЕТОД: встроенный answer()
+    await event.message.answer(get_help_text())
 
 @dp.message_created()
 async def handle_all_messages(event: MessageCreated):
     user_id = extract_user_id(event)
     chat_id = extract_chat_id(event)
 
-    if not user_id or not chat_id:
-        logger.error("❌ Не удалось получить user_id или chat_id")
+    if not user_id:
         return
 
-    # 🔑 АВТОМАТИЧЕСКИ СОХРАНЯЕМ СВЯЗКУ user_id -> chat_id
-    if user_id not in subscribers:
-        subscribers[user_id] = chat_id
-        save_subscribers(subscribers)
-        logger.info(f"💾 Сохранен новый пользователь: user_id={user_id}, chat_id={chat_id}")
-    else:
-        # Обновляем chat_id если изменился
+    if user_id and chat_id:
         subscribers[user_id] = chat_id
         save_subscribers(subscribers)
 
@@ -219,68 +176,62 @@ async def handle_all_messages(event: MessageCreated):
     if not text:
         return
 
-    logger.info(f"📩 Сообщение от {user_id} (chat_id: {chat_id}): '{text}'")
+    logger.info(f"📩 Сообщение от {user_id}: '{text}'")
     text_lower = text.lower()
 
     if text_lower in ['/start', '/help']:
         await msg.answer(get_help_text())
 
     elif text_lower == '/subscribe':
-        await msg.answer(
-            "✅ Вы успешно подписаны на утреннюю рассылку! Бот будет присылать Топ-5 акций каждый будний день в 10:00.")
+        await msg.answer("✅ Вы подписаны на утреннюю рассылку (10:00 МСК)!")
 
     elif text_lower == '/unsubscribe':
         if user_id in subscribers:
             del subscribers[user_id]
             save_subscribers(subscribers)
-            await msg.answer("❌ Вы отписаны от утренней рассылки.")
+            await msg.answer("❌ Вы отписаны от рассылки.")
         else:
-            await msg.answer("ℹ️ Вы и так не были подписаны на рассылку.")
+            await msg.answer("ℹ️ Вы и так не были подписаны.")
 
     elif text_lower == '/top':
-        await send_top_stocks(event, n=5)
+        await send_top_stocks(msg, n=5)
 
     elif text_lower == '/top10':
-        await send_top_stocks(event, n=10)
+        await send_top_stocks(msg, n=10)
 
     elif text_lower.startswith('/ticker '):
         parts = text.split(maxsplit=1)
         if len(parts) >= 2:
             ticker_code = parts[1].strip().upper()
             if ticker_code in model.tickers:
-                await send_ticker_analysis(event, ticker_code)
+                await send_ticker_analysis(msg, ticker_code)
             else:
-                await msg.answer(f"❌ Тикер {ticker_code} не найден. Доступные: {', '.join(model.tickers)}")
+                await msg.answer(f"❌ Тикер не найден. Доступные: {', '.join(model.tickers[:10])}...")
 
     else:
         ticker_code = text.upper()
         if ticker_code in model.tickers:
-            await send_ticker_analysis(event, ticker_code)
+            await send_ticker_analysis(msg, ticker_code)
         else:
-            await msg.answer("❓ Напишите тикер акции (например, SBER) или команду /help")
+            await msg.answer("❓ Напишите тикер (например, SBER) или /help")
 
 # ============================================================================
 # ЗАПУСК
 # ============================================================================
 async def main():
-    logger.info("🤖 Запуск бота MAX с планировщиком...")
+    logger.info("🤖 Запуск бота MAX...")
 
     try:
         await bot.delete_webhook()
-        logger.info("✅ Webhook удален. Polling активирован.")
+        logger.info("✅ Webhook удален")
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось удалить webhook: {e}")
-
-    # 🕒 НАСТРОЙКА РАСПИСАНИЯ
-    # По умолчанию: каждый день в 10:00 по московскому времени (timezone='Europe/Moscow')
-    # Для тестирования прямо сейчас раскомментируйте строку ниже и закомментируйте cron:
-    #scheduler.add_job(morning_report_job, 'interval', minutes=1)  # Тест: отправка через 1 минуту после запуска
+        logger.warning(f"⚠️ {e}")
 
     scheduler.add_job(morning_report_job, 'cron', hour=10, minute=0, timezone='Europe/Moscow')
     scheduler.start()
-    logger.info("⏰ Планировщик запущен. Рассылка настроена на 10:00 МСК.")
+    logger.info("⏰ Рассылка настроена на 10:00 МСК")
 
-    logger.info("💬 Откройте бота в MAX и нажмите 'Начать'")
+    logger.info("💬 Откройте бота в MAX")
     await dp.start_polling(bot)
 
 if __name__ == '__main__':

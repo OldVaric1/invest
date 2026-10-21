@@ -29,52 +29,72 @@ def get_imoex_tickers():
     """Автоматическая загрузка состава индекса Мосбиржи"""
     logger.info("🔍 Пытаюсь загрузить состав индекса IMOEX...")
 
-    # Правильный URL для состава индекса
-    url = "https://iss.moex.com/iss/engines/stock/markets/indexes/securities/IMOEX/components.json"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 
-    try:
-        response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code == 200:
+    # Несколько вариантов URL — Мосбиржа меняет форматы
+    urls = [
+        "https://iss.moex.com/iss/engines/stock/markets/indexes/securities/IMOEX.json?iss.meta=off&iss.only=components",
+        "https://iss.moex.com/iss/engines/stock/markets/indexes/securities/IMOEX/components.json?iss.meta=off",
+        "https://iss.moex.com/iss/engines/stock/markets/indexes/securities/IMOEX.json?iss.meta=off",
+    ]
+
+    for url in urls:
+        try:
+            logger.info(f"Пробую URL: {url[:80]}...")
+            response = requests.get(url, headers=headers, timeout=15)
+
+            if response.status_code != 200:
+                logger.warning(f"Статус {response.status_code}, пропускаю")
+                continue
+
             data = response.json()
+            logger.info(f"Ключи ответа: {list(data.keys())}")
 
-            # Проверяем наличие блока 'securities' (как показал ваш лог)
-            if 'securities' in data and 'data' in data['securities'] and 'columns' in data['securities']:
-                columns = data['securities']['columns']
-                rows = data['securities']['data']
+            # Вариант 1: блок 'components' с вложенными 'columns' и 'data'
+            if 'components' in data:
+                comp = data['components']
+                columns = comp.get('columns', [])
+                rows = comp.get('data', [])
 
-                # Находим индекс колонки с тикером (обычно это 'SECID')
-                if 'SECID' in columns:
-                    secid_index = columns.index('SECID')
-                    # Извлекаем тикеры, фильтруя пустые значения
-                    tickers = [str(row[secid_index]).strip() for row in rows if row[secid_index]]
+                if rows:
+                    columns_lower = [c.lower() for c in columns]
+                    if 'secid' in columns_lower:
+                        idx = columns_lower.index('secid')
+                        tickers = [str(r[idx]).strip() for r in rows if r[idx]]
+                        if tickers:
+                            logger.info(f"✅ Загружено {len(tickers)} акций (вариант 1)")
+                            return list(dict.fromkeys(tickers))
 
-                    logger.info(f"✅ Успешно загружено {len(tickers)} акций из индекса IMOEX")
-                    return tickers
-                else:
-                    logger.warning(f"⚠️ Колонка 'SECID' не найдена. Доступные колонки: {columns}")
-            else:
-                logger.warning(f"⚠️ Неожиданная структура ответа: {list(data.keys())}")
+            # Вариант 2: блок 'securities' (для components.json)
+            if 'securities' in data:
+                sec = data['securities']
+                columns = sec.get('columns', [])
+                rows = sec.get('data', [])
 
-    except Exception as e:
-        logger.warning(f"⚠️ Ошибка при загрузке состава IMOEX: {e}")
+                if rows:
+                    columns_lower = [c.lower() for c in columns]
+                    if 'secid' in columns_lower:
+                        idx = columns_lower.index('secid')
+                        tickers = [str(r[idx]).strip() for r in rows if r[idx]]
+                        if tickers:
+                            logger.info(f"✅ Загружено {len(tickers)} акций (вариант 2)")
+                            return list(dict.fromkeys(tickers))
 
-    # Fallback: расширенный статический список ликвидных акций (на случай сбоя API)
-    logger.info("📋 Использую расширенный статический список ликвидных акций")
+            logger.warning(f"Данных не найдено в этом URL")
+
+        except Exception as e:
+            logger.warning(f"Ошибка {url[:60]}: {e}")
+
+    # Fallback: статический список
+    logger.info("📋 Использую расширенный статический список")
     return [
-        # Нефть и газ
         'SBER', 'GAZP', 'LKOH', 'NVTK', 'ROSN', 'TATN', 'BSPB',
-        # Финансы
         'VTBR', 'MOEX', 'CBOM', 'TCSG',
-        # Металлы и добыча
         'GMKN', 'NLMK', 'CHMF', 'MAGN', 'ALRS', 'PLZL', 'RUAL',
-        # Потребительский сектор и IT
         'MGNT', 'X5', 'MTSS', 'AFKS', 'OZON', 'YDEX', 'VKCO',
-        # Промышленность, энергетика и другие
         'AFLT', 'PHOR', 'SNGS', 'IRAO', 'FEES', 'RTKM', 'UPRO',
         'POLY', 'SELG', 'MTLR', 'SGZH', 'FIVE', 'RASP', 'TRMK'
     ]
-
 # ============================================================================
 # КЛАСС МОДЕЛИ
 # ============================================================================
@@ -95,8 +115,20 @@ class StockModel:
         """Загрузка данных с MOEX ISS API"""
         logger.info(f"🔄 Загрузка данных для {len(self.tickers)} акций...")
 
+        # Защита от пустого списка
+        if not self.tickers:
+            logger.warning("⚠️ Список тикеров пуст! Использую fallback.")
+            self.tickers = [
+                'SBER', 'GAZP', 'LKOH', 'NVTK', 'ROSN', 'TATN', 'BSPB',
+                'VTBR', 'MOEX', 'CBOM', 'TCSG',
+                'GMKN', 'NLMK', 'CHMF', 'MAGN', 'ALRS', 'PLZL', 'RUAL',
+                'MGNT', 'X5', 'MTSS', 'AFKS', 'OZON', 'YDEX', 'VKCO',
+                'AFLT', 'PHOR', 'SNGS', 'IRAO', 'FEES', 'RTKM', 'UPRO',
+                'POLY', 'SELG', 'MTLR', 'SGZH', 'FIVE', 'RASP', 'TRMK'
+            ]
+
         all_data = []
-        start_date = (datetime.now() - timedelta(days=3*365)).strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=3 * 365)).strftime('%Y-%m-%d')
         end_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         base_url = "https://iss.moex.com/iss/history/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json"
@@ -109,9 +141,27 @@ class StockModel:
 
                 while True:
                     params = {'from': start_date, 'till': end_date, 'start': start_idx, 'limit': limit}
-                    response = requests.get(base_url.format(ticker=ticker), headers=headers, params=params, timeout=15)
 
-                    if response.status_code != 200:
+                    # 🔑 RETRY-ЛОГИКА при SSL ошибках
+                    response = None
+                    for attempt in range(3):
+                        try:
+                            response = requests.get(
+                                base_url.format(ticker=ticker),
+                                headers=headers,
+                                params=params,
+                                timeout=20  # Увеличен таймаут
+                            )
+                            break
+                        except (requests.exceptions.ConnectionError,
+                                requests.exceptions.SSLError) as e:
+                            logger.warning(f"⚠️ {ticker}: попытка {attempt + 1}/3 — {type(e).__name__}")
+                            time.sleep(2 * (attempt + 1))  # Экспоненциальная задержка
+                        except Exception as e:
+                            logger.warning(f"⚠️ {ticker}: {e}")
+                            break
+
+                    if response is None or response.status_code != 200:
                         break
 
                     response_json = response.json()
@@ -127,7 +177,7 @@ class StockModel:
                         break
 
                     start_idx += limit
-                    time.sleep(0.05)
+                    time.sleep(0.2)  # Увеличена пауза
 
                 if ticker_data:
                     cols = response_json['history']['columns']
@@ -137,32 +187,34 @@ class StockModel:
                     df_ticker['Price'] = pd.to_numeric(df_ticker['CLOSE'], errors='coerce')
                     df_clean = df_ticker[['Date', 'Ticker', 'Price']].dropna(subset=['Price'])
 
-                    # Фильтр: минимум 100 торговых дней
                     if len(df_clean) >= 100:
                         all_data.append(df_clean)
                         if idx <= 3 or idx % 10 == 0:
                             logger.info(f"✅ {ticker}: {len(df_clean)} записей")
                     else:
-                        logger.warning(f"⚠️ {ticker}: слишком мало данных ({len(df_clean)}), пропущен")
+                        logger.warning(f"⚠️ {ticker}: мало данных ({len(df_clean)})")
 
+            except KeyboardInterrupt:
+                logger.info(" Остановка пользователем")
+                raise
             except Exception as e:
                 if idx <= 3:
-                    logger.warning(f"⚠️ {ticker}: {str(e)[:60]}")
+                    logger.warning(f"️ {ticker}: {str(e)[:60]}")
 
-            time.sleep(0.1)
+            time.sleep(0.15)
 
-        # Fallback на синтетику
+        # Fallback на синтетику только если реально ничего не загрузилось
         if len(all_data) == 0:
             logger.warning("❌ Не удалось загрузить данные! Используем синтетику.")
             self.is_synthetic = True
             np.random.seed(42)
             dates = pd.date_range(start=start_date, end=end_date, freq='B')
-            for ticker in self.tickers[:15]:  # Только первые 15 для синтетики
+            for ticker in self.tickers[:15]:
                 prices = 100 * np.exp(np.cumsum(np.random.normal(0.0005, 0.02, len(dates))))
                 all_data.append(pd.DataFrame({'Date': dates, 'Ticker': ticker, 'Price': prices}))
 
         self.df = pd.concat(all_data, ignore_index=True).sort_values(['Ticker', 'Date']).reset_index(drop=True)
-        logger.info(f" Загружено данных: {len(self.df)} строк для {len(self.df['Ticker'].unique())} акций")
+        logger.info(f"✅ Загружено данных: {len(self.df)} строк для {len(self.df['Ticker'].unique())} акций")
         return self.df
 
     def add_features(self):
